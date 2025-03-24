@@ -14,11 +14,22 @@ import urllib.request
 import tempfile
 import gzip
 import io
+import threading
+import zipfile
+import time
+
+# Application version
+APP_VERSION = "1.0.0"
+APP_NAME = "PyEnv"
+AUTHOR = "Kaustubh Parab"
+GITHUB_URL = "https://github.com/iamkaustic"
+GITHUB_REPO = "iamkaustic/PyEnv"  # Just username/repo format
+DEMO_MODE = False  # Set to False when you have a real GitHub repo
 
 class PyEnvManager:
     def __init__(self, root):
         self.root = root
-        self.root.title("Python Environment Manager")
+        self.root.title("PyEnv - Python Environment Manager")
         self.root.geometry("800x600")
         self.root.minsize(800, 600)
         
@@ -58,21 +69,42 @@ class PyEnvManager:
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Create header
+        # Create header frame
         header_frame = ttk.Frame(main_frame)
         header_frame.pack(fill=tk.X, pady=(0, 10))
         
-        ttk.Label(header_frame, text="Python Environment Manager", 
-                 font=("Helvetica", 16, "bold")).pack(side=tk.LEFT)
+        # Left side: App title and version with update button
+        title_frame = ttk.Frame(header_frame)
+        title_frame.pack(side=tk.LEFT, fill=tk.Y)
         
-        # Add system Python version
-        python_version_frame = ttk.Frame(header_frame)
-        python_version_frame.pack(side=tk.RIGHT)
+        # App title
+        ttk.Label(title_frame, text=f"{APP_NAME}", 
+                 font=("Helvetica", 16, "bold")).pack(side=tk.TOP, anchor=tk.W)
         
-        ttk.Label(python_version_frame, text=f"System Python: {self.system_python_version}", 
+        # Version and update button
+        version_update_frame = ttk.Frame(title_frame)
+        version_update_frame.pack(side=tk.BOTTOM, anchor=tk.W, pady=(2, 0))
+        
+        ttk.Label(version_update_frame, text=f"v{APP_VERSION}").pack(side=tk.LEFT)
+        
+        check_update_btn = ttk.Button(version_update_frame, text="Check for Updates", 
+                                     command=self.check_for_updates, width=15)
+        check_update_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Right side: Python version and actions
+        python_frame = ttk.Frame(header_frame)
+        python_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # About button at top right
+        about_btn = ttk.Button(python_frame, text="About", command=self.show_about, width=10)
+        about_btn.pack(side=tk.TOP, anchor=tk.E, pady=(0, 5))
+        
+        # Python version info
+        ttk.Label(python_frame, text=f"System Python: {self.system_python_version}", 
                  font=("Helvetica", 10)).pack(side=tk.TOP, anchor=tk.E)
         
-        python_actions_frame = ttk.Frame(python_version_frame)
+        # Python action buttons
+        python_actions_frame = ttk.Frame(python_frame)
         python_actions_frame.pack(side=tk.BOTTOM, anchor=tk.E)
         
         change_python_btn = ttk.Button(python_actions_frame, text="Change Python", 
@@ -1068,7 +1100,378 @@ class PyEnvManager:
             return result.stdout.strip()
         except:
             return "Unknown"
+    
+    def check_for_updates(self):
+        """Check for updates from GitHub and update if available"""
+        # Create update dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Check for Updates")
+        dialog.geometry("500x400")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Create main frame
+        main_frame = ttk.Frame(dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Header
+        ttk.Label(main_frame, text="Check for Updates", 
+                 font=("Helvetica", 14, "bold")).pack(anchor=tk.W, pady=(0, 10))
+        
+        # Current version info
+        version_frame = ttk.Frame(main_frame)
+        version_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(version_frame, text="Current Version:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Label(version_frame, text=APP_VERSION).grid(row=0, column=1, sticky=tk.W, pady=5)
+        
+        # Status frame
+        status_frame = ttk.LabelFrame(main_frame, text="Status")
+        status_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        status_text = tk.Text(status_frame, height=10, width=50, wrap=tk.WORD)
+        status_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        status_text.config(state=tk.DISABLED)
+        
+        # Progress bar
+        progress = ttk.Progressbar(main_frame, mode="determinate")
+        progress.pack(fill=tk.X, pady=10)
+        progress["value"] = 0
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=10)
+        
+        update_btn = ttk.Button(button_frame, text="Update", state=tk.DISABLED)
+        update_btn.pack(side=tk.LEFT, padx=5)
+        
+        close_btn = ttk.Button(button_frame, text="Close", command=dialog.destroy)
+        close_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Function to append text to status
+        def append_status(text):
+            status_text.config(state=tk.NORMAL)
+            status_text.insert(tk.END, text + "\n")
+            status_text.see(tk.END)
+            status_text.config(state=tk.DISABLED)
+            dialog.update()
+        
+        # Function to download and update
+        def download_and_update(release_data):
+            try:
+                append_status("Preparing to update...")
+                progress["value"] = 0
+                
+                # Find the zip asset
+                zip_asset = None
+                for asset in release_data['assets']:
+                    if asset['name'].endswith('.zip'):
+                        zip_asset = asset
+                        break
+                
+                if not zip_asset:
+                    append_status("Error: No zip file found in release assets.")
+                    append_status("Please make sure the GitHub release includes a .zip file.")
+                    close_btn.config(state=tk.NORMAL)
+                    return
+                
+                # Download the zip file
+                append_status(f"Downloading update package: {zip_asset['name']}...")
+                download_url = zip_asset['browser_download_url']
+                
+                # Create temp directory
+                temp_dir = tempfile.mkdtemp()
+                zip_path = os.path.join(temp_dir, zip_asset['name'])
+                
+                # Function to update progress bar
+                def update_progress(count, block_size, total_size):
+                    if total_size > 0:
+                        percent = min(count * block_size * 100 / total_size, 100)
+                        progress["value"] = percent
+                        dialog.update()
+                
+                # Download the file
+                urllib.request.urlretrieve(download_url, zip_path, reporthook=update_progress)
+                
+                append_status("Download complete.")
+                append_status("Extracting files...")
+                progress["value"] = 0
+                
+                # Extract the zip file
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    # Get total files for progress tracking
+                    total_files = len(zip_ref.namelist())
+                    extracted = 0
+                    
+                    # Extract each file
+                    for file in zip_ref.namelist():
+                        zip_ref.extract(file, temp_dir)
+                        extracted += 1
+                        progress["value"] = (extracted / total_files) * 100
+                        if extracted % 10 == 0:  # Update UI every 10 files
+                            dialog.update()
+                
+                # Find the extracted directory
+                extracted_dir = None
+                for item in os.listdir(temp_dir):
+                    item_path = os.path.join(temp_dir, item)
+                    if os.path.isdir(item_path) and item != "__MACOSX":  # Skip macOS metadata
+                        extracted_dir = item_path
+                        break
+                
+                if not extracted_dir:
+                    append_status("Error: Could not find extracted directory.")
+                    close_btn.config(state=tk.NORMAL)
+                    return
+                
+                append_status("Preparing to apply update...")
+                progress["value"] = 0
+                
+                # Get current application directory
+                app_dir = os.path.dirname(os.path.abspath(__file__))
+                
+                # Create backup of current version
+                backup_dir = os.path.join(app_dir, f"backup_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                append_status(f"Creating backup in: {backup_dir}")
+                shutil.copytree(app_dir, backup_dir, ignore=shutil.ignore_patterns('backup_*'))
+                
+                # Create update script
+                update_script = """
+import os
+import sys
+import shutil
+import time
+import subprocess
 
+# Wait for the parent process to exit
+time.sleep(2)
+
+# Start the application with the new Python
+subprocess.Popen([r"{python}", r"{script}"])
+                """.format(python=sys.executable, script=os.path.abspath(__file__))
+                
+                # Write update script to a temporary file
+                with tempfile.NamedTemporaryFile(suffix='.py', delete=False, mode='w') as f:
+                    f.write(update_script)
+                    restart_script_path = f.name
+                
+                # Run the restart script
+                subprocess.Popen([sys.executable, restart_script_path])
+                
+                # Close the application
+                self.root.quit()
+                
+            except Exception as e:
+                append_status(f"Error during update: {str(e)}")
+                close_btn.config(state=tk.NORMAL)
+        
+        # Function to check for updates
+        def do_check_for_updates():
+            try:
+                append_status("Checking for updates...")
+                progress["value"] = 10
+                
+                # Demo mode for testing without a real GitHub repo
+                if DEMO_MODE:
+                    append_status("Running in demo mode (no actual GitHub repository connected)")
+                    progress["value"] = 30
+                    
+                    # Simulate a delay
+                    time.sleep(1)
+                    
+                    # Simulate finding a new version
+                    latest_version = "1.1.0"
+                    append_status(f"Latest version: {latest_version}")
+                    
+                    progress["value"] = 50
+                    
+                    # Simulate release notes
+                    release_notes = """
+## What's New in 1.1.0
+
+### New Features
+- Added automatic update system
+- Improved Python version management
+- Enhanced package dependency visualization
+
+### Bug Fixes
+- Fixed issue with environment creation on some systems
+- Improved error handling throughout the application
+- Better compatibility with different Python versions
+                    """
+                    
+                    append_status("Update available!")
+                    append_status(f"Release notes:\n{release_notes}")
+                    
+                    # Enable update button
+                    update_btn.config(state=tk.NORMAL)
+                    
+                    # Configure update button for demo mode
+                    def demo_update():
+                        update_btn.config(state=tk.DISABLED)
+                        close_btn.config(state=tk.DISABLED)
+                        
+                        append_status("Preparing to update...")
+                        progress["value"] = 0
+                        
+                        # Simulate download
+                        for i in range(0, 101, 10):
+                            append_status(f"Downloading update: {i}%") if i % 30 == 0 else None
+                            progress["value"] = i
+                            time.sleep(0.2)
+                            dialog.update()
+                        
+                        append_status("Download complete.")
+                        append_status("Extracting files...")
+                        progress["value"] = 0
+                        
+                        # Simulate extraction
+                        for i in range(0, 101, 5):
+                            progress["value"] = i
+                            time.sleep(0.1)
+                            dialog.update()
+                        
+                        append_status("Preparing to apply update...")
+                        append_status("Creating backup of current version...")
+                        progress["value"] = 0
+                        
+                        # Simulate backup and update
+                        for i in range(0, 101, 20):
+                            append_status(f"Backing up files: {i}%") if i % 40 == 0 else None
+                            progress["value"] = i
+                            time.sleep(0.2)
+                            dialog.update()
+                        
+                        append_status("Update ready. The application will restart to apply the update.")
+                        progress["value"] = 100
+                        
+                        # Show demo message
+                        messagebox.showinfo("Demo Mode", 
+                                           "This is a demonstration of the update feature.\n\n"
+                                           "In a real deployment, the application would download "
+                                           "and install the update from GitHub.\n\n"
+                                           "To use this feature, set DEMO_MODE to False and "
+                                           "configure a valid GitHub repository.")
+                        
+                        close_btn.config(state=tk.NORMAL)
+                    
+                    update_btn.config(command=demo_update)
+                    
+                else:
+                    # Real GitHub API implementation
+                    # Fetch latest release info from GitHub API
+                    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+                    
+                    append_status(f"Connecting to GitHub API: {api_url}")
+                    
+                    headers = {
+                        'User-Agent': 'Python Environment Manager Update Checker',
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                    
+                    req = urllib.request.Request(api_url, headers=headers)
+                    
+                    try:
+                        with urllib.request.urlopen(req) as response:
+                            data = json.loads(response.read().decode('utf-8'))
+                            
+                            # Debug output
+                            append_status(f"API response received. Status: {response.status}")
+                            
+                            if 'tag_name' not in data:
+                                append_status("Error: Invalid response from GitHub API")
+                                append_status(f"Response keys: {', '.join(data.keys())}")
+                                progress["value"] = 0
+                                return
+                            
+                            latest_version = data['tag_name'].lstrip('v')
+                            progress["value"] = 30
+                            
+                            append_status(f"Latest version: {latest_version}")
+                            
+                            # Compare versions
+                            try:
+                                current_version_parts = [int(x) for x in APP_VERSION.split('.')]
+                                latest_version_parts = [int(x) for x in latest_version.split('.')]
+                                
+                                # Pad with zeros if needed
+                                while len(current_version_parts) < 3:
+                                    current_version_parts.append(0)
+                                while len(latest_version_parts) < 3:
+                                    latest_version_parts.append(0)
+                                
+                                update_available = False
+                                for i in range(3):
+                                    if latest_version_parts[i] > current_version_parts[i]:
+                                        update_available = True
+                                        break
+                                    elif latest_version_parts[i] < current_version_parts[i]:
+                                        break
+                                
+                                progress["value"] = 50
+                                
+                                if update_available:
+                                    append_status("Update available!")
+                                    
+                                    # Check if body exists in the response
+                                    if 'body' in data and data['body']:
+                                        append_status(f"Release notes:\n{data['body']}")
+                                    else:
+                                        append_status("No release notes available.")
+                                    
+                                    # Check if there are assets
+                                    if 'assets' not in data or not data['assets']:
+                                        append_status("Warning: No assets found in this release.")
+                                        append_status("The update cannot be downloaded automatically.")
+                                        progress["value"] = 100
+                                        return
+                                    
+                                    # Enable update button
+                                    update_btn.config(state=tk.NORMAL)
+                                    
+                                    # Configure update button
+                                    def do_update():
+                                        update_btn.config(state=tk.DISABLED)
+                                        close_btn.config(state=tk.DISABLED)
+                                        download_and_update(data)
+                                    
+                                    update_btn.config(command=do_update)
+                                else:
+                                    append_status("You have the latest version.")
+                            except ValueError as e:
+                                append_status(f"Error parsing version numbers: {str(e)}")
+                                append_status(f"Current version: {APP_VERSION}, Latest version: {latest_version}")
+                        
+                    except urllib.error.HTTPError as e:
+                        if e.code == 404:
+                            append_status(f"Error: GitHub repository '{GITHUB_REPO}' not found or no releases available.")
+                            append_status("Please check the GITHUB_REPO constant in the code.")
+                            append_status("Make sure you have created at least one release on GitHub.")
+                        else:
+                            append_status(f"HTTP Error: {e.code} - {e.reason}")
+                            append_status(f"Response: {e.read().decode('utf-8')}")
+                    except urllib.error.URLError as e:
+                        append_status(f"Connection Error: {e.reason}")
+                        append_status("Please check your internet connection.")
+                    except json.JSONDecodeError as e:
+                        append_status(f"Error parsing GitHub API response: {str(e)}")
+                
+                progress["value"] = 100
+                
+            except Exception as e:
+                append_status(f"Error checking for updates: {str(e)}")
+                progress["value"] = 0
+                
+                # Log the error for debugging
+                import traceback
+                append_status("Detailed error information:")
+                append_status(traceback.format_exc())
+                print(f"Version fetch error: {str(e)}")
+                print(traceback.format_exc())
+        
+        # Start the update check in a separate thread
+        threading.Thread(target=do_check_for_updates, daemon=True).start()
+    
     def change_python_version(self):
         """Change the Python version used by the application"""
         # Create dialog window
@@ -1237,6 +1640,7 @@ subprocess.Popen([r"{python}", r"{script}"])
                     }
                     
                     req = urllib.request.Request(url, headers=headers)
+                    
                     with urllib.request.urlopen(req) as response:
                         # Check if the response is gzipped
                         if response.info().get('Content-Encoding') == 'gzip':
@@ -1499,6 +1903,66 @@ subprocess.Popen([r"{python}", r"{script}"])
                               foreground="blue", cursor="hand2")
         link_label.pack(anchor=tk.W)
         link_label.bind("<Button-1>", lambda e: open_python_website())
+
+    def show_about(self):
+        """Show about dialog with application information"""
+        about_dialog = tk.Toplevel(self.root)
+        about_dialog.title(f"About {APP_NAME}")
+        about_dialog.geometry("400x300")
+        about_dialog.transient(self.root)
+        about_dialog.grab_set()
+        
+        # Create main frame with padding
+        main_frame = ttk.Frame(about_dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # App logo/icon (if available)
+        try:
+            logo_img = tk.PhotoImage(file="icon.png")
+            logo_img = logo_img.subsample(3, 3)  # Scale down the image
+            logo_label = ttk.Label(main_frame, image=logo_img)
+            logo_label.image = logo_img  # Keep a reference
+            logo_label.pack(pady=(0, 10))
+        except:
+            # If icon not found, just show the app name
+            ttk.Label(main_frame, text=APP_NAME, 
+                     font=("Helvetica", 18, "bold")).pack(pady=(0, 10))
+        
+        # App information
+        ttk.Label(main_frame, text=f"Version {APP_VERSION}", 
+                 font=("Helvetica", 10)).pack(pady=(0, 15))
+        
+        ttk.Label(main_frame, text=f"Developed by {AUTHOR}", 
+                 font=("Helvetica", 10)).pack(pady=(0, 5))
+        
+        # GitHub link
+        github_frame = ttk.Frame(main_frame)
+        github_frame.pack(pady=(0, 15))
+        
+        ttk.Label(github_frame, text="GitHub: ").pack(side=tk.LEFT)
+        
+        github_link = ttk.Label(github_frame, text=GITHUB_URL, 
+                               foreground="blue", cursor="hand2")
+        github_link.pack(side=tk.LEFT)
+        github_link.bind("<Button-1>", lambda e: self.open_url(GITHUB_URL))
+        
+        # Description
+        description = (
+            f"{APP_NAME} is a comprehensive tool for managing Python virtual environments, "
+            "packages, and Python installations. It provides an intuitive graphical interface "
+            "for tasks that would otherwise require command-line operations."
+        )
+        
+        desc_label = ttk.Label(main_frame, text=description, wraplength=350, justify=tk.CENTER)
+        desc_label.pack(pady=(0, 15))
+        
+        # Close button
+        ttk.Button(main_frame, text="Close", command=about_dialog.destroy).pack()
+    
+    def open_url(self, url):
+        """Open a URL in the default web browser"""
+        import webbrowser
+        webbrowser.open(url)
 
 def main():
     root = tk.Tk()

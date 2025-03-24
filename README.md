@@ -1,8 +1,8 @@
-# Python Environment Manager
+# PyEnv - Python Environment Manager
 
 A comprehensive GUI application to create, manage, and maintain Python virtual environments and installations.
 
-![Python Environment Manager](https://img.shields.io/badge/Python-Environment%20Manager-blue)
+![PyEnv](https://img.shields.io/badge/PyEnv-Environment%20Manager-blue)
 ![Python 3.6+](https://img.shields.io/badge/Python-3.6%2B-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
@@ -28,6 +28,13 @@ A comprehensive GUI application to create, manage, and maintain Python virtual e
 - Download new Python versions directly from python.org
 - Auto-fetch the latest available Python versions
 
+### Application Updates
+- Check for application updates with one click
+- View release notes for new versions
+- Automatic download and installation of updates
+- Backup of previous version during update process
+- Seamless restart with new version
+
 ## 📋 Requirements
 
 - Python 3.6+
@@ -38,8 +45,8 @@ A comprehensive GUI application to create, manage, and maintain Python virtual e
 
 1. Clone this repository:
    ```
-   git clone https://github.com/yourusername/python-environment-manager.git
-   cd python-environment-manager
+   git clone https://github.com/iamkaustic/PyEnv.git
+   cd PyEnv
    ```
 
 2. Install dependencies:
@@ -113,6 +120,16 @@ python pyenv_manager.py
    - Download the installer or embeddable package
    - Run the installer directly from the application
 
+### Checking for Updates
+
+1. Click the "Check for Updates" button in the main interface
+2. The application will:
+   - Connect to GitHub to check for new versions
+   - Display available updates with release notes
+   - Download and install updates automatically
+   - Create a backup of the current version before updating
+   - Restart with the new version
+
 ## 🛠️ Advanced Features
 
 ### Local Package Installation
@@ -130,6 +147,13 @@ The application automatically detects:
 - The system Python version
 - Available Python installations
 - Appropriate download options for your platform
+
+## 👤 About
+
+PyEnv is developed by Kaustubh Parab.
+
+- GitHub: [https://github.com/iamkaustic](https://github.com/iamkaustic)
+- Repository: [https://github.com/iamkaustic/PyEnv](https://github.com/iamkaustic/PyEnv)
 
 ## 🤝 Contributing
 
